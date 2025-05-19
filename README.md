@@ -23,8 +23,8 @@ This project demonstrates:
 
 ## 👥 Team Composition
 
-* **Alice Smith** — Frontend & Documentation
-* **Bob Jones** — Backend & Networking
+* Nurefşan Altın — Backend & Networking
+* Arda Engin — Frontend & Documentation
 
 *Working in tandem, we designed, coded, and tested both client and server components with robust error handling and clear console output.*
 
@@ -36,14 +36,13 @@ This project demonstrates:
 
 * Linux-based OS (tested on  CentOS7)
 * C/C++ compiler (GCC)
-* Wireshark (optional, for packet inspection)
 
 ### Installation & Setup
 
 1. Clone this repository:
 
    ```bash
-   git clone https://github.com/your-org/os-network-tools.git
+   git clone https://github.com/your-org/operating-thing-project.git
    cd os-network-tools/project5
    ```
 
@@ -52,13 +51,6 @@ This project demonstrates:
    ```bash
    make
    ```
-
-3. Install Python dependencies (for Python version):
-
-   ```bash
-   pip install -r requirements.txt
-   ```
-
 ---
 
 ## 📦 Usage
@@ -66,18 +58,19 @@ This project demonstrates:
 ### 1. Start the UDP Server
 
 ```bash
+
 # C/C++ version
 ./udp_route_server <port>
+
 ```
 
 ### 2. Run the UDP Client
 
 ```bash
+
 # C/C++ version
 ./udp_route_client <server_ip> <port>
 
-# Python version
-python3 udp_route_client.py --host 127.0.0.1 --port 9000
 ```
 
 Upon running, the client will print the route table received from the server in a neatly formatted table.
@@ -111,9 +104,3 @@ project5/
 ## 📄 License
 
 This project is licensed under the MIT License. See [LICENSE](../LICENSE) for details.
-
----
-
-## 💬 Questions?
-
-Feel free to open an issue or contact **Alice Smith** at [alice@university.edu](mailto:alice@university.edu).
