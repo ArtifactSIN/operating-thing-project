@@ -1,128 +1,174 @@
-// udp_server.c
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#define BUFFER_SIZE 1000
-#define REQUEST_STRING "get route table"
 
-void get_route_table(char *buffer)
+#define MAX_BUFFER_SIZE 1000             
+#define EXPECTED_REQUEST_CMD "get route table" 
+
+// Function to get the routing table and format it into the outputBuffer
+void fetchAndFormatRouteTable(char *outputBuffer) 
 {
-    FILE *fp;
-    char cmd_output[BUFFER_SIZE];
-    int total_written = 0;
+    FILE *commandPipe;                      
+    char commandLineOutput[MAX_BUFFER_SIZE];     
+    int bytesWrittenToBuffer = 0;            
 
-    memset(buffer, ' ', BUFFER_SIZE); // fill buffer with spaces
-    buffer[BUFFER_SIZE - 1] = '\0';   // null-terminate for safety
+    // Initialize buffer: fill with spaces, then null-terminate the end
+    memset(outputBuffer, ' ', MAX_BUFFER_SIZE);  
+    outputBuffer[MAX_BUFFER_SIZE - 1] = '\0';    
 
-    fp = popen("ip route show", "r");
-    if (fp == NULL)
+    // Open a pipe to the 'ip route show' command
+    // printf("Executing 'ip route show' command to fetch routing table...\n");
+    commandPipe = popen("ip route show", "r"); 
+    if (commandPipe == NULL) 
     {
-        snprintf(buffer, BUFFER_SIZE, "Error getting the routing table !");
+        perror("Error: Failed to run 'ip route show' command via popen"); 
+        // Prepare an error message in the output buffer
+        snprintf(outputBuffer, MAX_BUFFER_SIZE, "Error: Could not retrieve routing table from system!"); 
+        // Ensure the rest of the buffer is padded with spaces if snprintf wrote less than MAX_BUFFER_SIZE
+        int errMsgLen = strlen(outputBuffer);
+        if (errMsgLen < MAX_BUFFER_SIZE - 1)
+        {
+             memset(outputBuffer + errMsgLen, ' ', MAX_BUFFER_SIZE - errMsgLen - 1);
+        }
+        outputBuffer[MAX_BUFFER_SIZE - 1] = '\0'; // Ensure null termination
         return;
     }
 
-    while (fgets(cmd_output, sizeof(cmd_output), fp) != NULL)
+    // Read the command output line by line
+    while (fgets(commandLineOutput, sizeof(commandLineOutput), commandPipe) != NULL) 
     {
-        int len = strlen(cmd_output);
-        if (total_written + len >= BUFFER_SIZE - 1)
-            break;
+        int currentLineLength = strlen(commandLineOutput); 
+        // Check if there's enough space in the output buffer (leaving room for final null terminator)
+        if (bytesWrittenToBuffer + currentLineLength >= MAX_BUFFER_SIZE - 1) // 
+        {
+            // printf("Warning: Routing table output may be truncated as buffer is nearly full.\n"); 
+            break; // Stop if buffer is effectively full
+        }
 
-        strncpy(buffer + total_written, cmd_output, len);
-        total_written += len;
+        // Copy the current line of command output to the output buffer
+        strncpy(outputBuffer + bytesWrittenToBuffer, commandLineOutput, currentLineLength); // 
+        bytesWrittenToBuffer += currentLineLength; // 
     }
 
-    pclose(fp);
+    pclose(commandPipe); // 
+    // printf("Finished reading from 'ip route show' command pipe.\n"); 
 
-    // Ensure the string ends cleanly and fills the buffer
-    if (total_written < BUFFER_SIZE)
-        memset(buffer + total_written, ' ', BUFFER_SIZE - total_written - 1);
-    buffer[BUFFER_SIZE - 1] = '\0'; // null-terminate
+    // The buffer was pre-filled with spaces.
+    // Any part not overwritten by strncpy will remain spaces.
+    // The final character is already set to '\0'.
+    // Original logic to explicitly fill remaining with spaces after reading:
+    // if (bytesWrittenToBuffer < MAX_BUFFER_SIZE -1) // if any space left before the last char
+    //    memset(outputBuffer + bytesWrittenToBuffer, ' ', MAX_BUFFER_SIZE - bytesWrittenToBuffer - 1);
+    // This is largely handled by the initial memset, but being explicit ensures no intermediate nulls from command output become end of data.
+    // However, the client expects a full MAX_BUFFER_SIZE block. The initial fill should suffice.
 }
 
 int main(int argc, char *argv[])
 {
-    int Sock;
-    struct sockaddr_in server;
-    struct sockaddr_in client;
-    char buffer[BUFFER_SIZE];
-    socklen_t addr_len = sizeof(client);
+    int serverSocketFD;                               // Renamed from Sock 
+    struct sockaddr_in serverBindingInfo;             // Renamed from server 
+    struct sockaddr_in incomingClientAddress;         // Renamed from client 
+    char receiveBuffer[MAX_BUFFER_SIZE];              // Renamed from buffer 
+    socklen_t clientAddressLength = sizeof(incomingClientAddress); // Renamed from addr_len 
 
-    // Defaults
-    int Server_Port = 5005;
-    char *Server_IP = "0.0.0.0";
+    // Default server parameters
+    int listeningPort = 5005;                         // Renamed from Server_Port 
+    char *listeningIPAddress = "0.0.0.0";             // Renamed from Server_IP 
 
-    printf("You can run this program as follows: %s [server_PORT [server_IP]]\n", argv[0]);
+    printf("You can run this server as follows: %s [SERVER_PORT [SERVER_IP]]\n", argv[0]); // 
 
-    // 1. Create UDP socket
-    if ((Sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+    // 1. Create UDP socket for the server
+    if ((serverSocketFD = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) // 
     {
-        perror("Error. Socket not created.");
+        perror("Error: Server socket not created."); // 
         exit(EXIT_FAILURE);
     }
-    printf("Socket created. Descriptor: %d\n", Sock);
+    printf("Server socket created successfully. File Descriptor: %d\n", serverSocketFD); // 
 
-    if (argc > 1)
-        Server_Port = atoi(argv[1]);
-    if (argc > 2)
-        Server_IP = argv[2];
-
-    // 2. Bind socket to IP/port
-    memset(&server, 0, sizeof(struct sockaddr_in));
-    server.sin_family = AF_INET;
-    server.sin_addr.s_addr = inet_addr(Server_IP);
-    server.sin_port = htons((u_short)Server_Port);
-
-    if (bind(Sock, (const struct sockaddr *)&server, sizeof(server)) < 0)
+    // Process command-line arguments for server IP and Port
+    if (argc > 1) // 
     {
-        perror("Error. Socket not bound.");
-        close(Sock);
+        listeningPort = atoi(argv[1]); // Using renamed variable 
+    }
+    if (argc > 2) // 
+    {
+        listeningIPAddress = argv[2]; // Using renamed variable 
+    }
+
+    // 2. Bind the server socket to a specific IP address and port
+    memset(&serverBindingInfo, 0, sizeof(struct sockaddr_in));           
+    serverBindingInfo.sin_family = AF_INET;                             
+    serverBindingInfo.sin_addr.s_addr = inet_addr(listeningIPAddress);  
+    serverBindingInfo.sin_port = htons((u_short)listeningPort);         
+
+    if (bind(serverSocketFD, (const struct sockaddr *)&serverBindingInfo, sizeof(serverBindingInfo)) < 0) 
+    {
+        perror("Error: Server socket not bound to address."); 
+        close(serverSocketFD); 
         exit(EXIT_FAILURE);
     }
-    printf("Socket is bound to %s:%d\n", Server_IP, Server_Port);
-    printf("UDP server listening...\n");
+    printf("Server socket is bound to %s:%d\n", listeningIPAddress, listeningPort); 
+    printf("UDP server is up and listening for incoming requests...\n"); 
 
-    // 3. Server loop
-    while (1)
+    // 3. Main server loop to handle incoming client requests
+    while (1) // 
     {
-        memset(buffer, 0, BUFFER_SIZE);
+        memset(receiveBuffer, 0, MAX_BUFFER_SIZE); // Clear buffer for new message 
+        // printf("\nWaiting to receive message from a client...\n"); 
 
-        // Receive request
-        int n = recvfrom(Sock, buffer, BUFFER_SIZE, 0,
-                         (struct sockaddr *)&client, &addr_len);
-        if (n < 0)
+        // Receive a request from a client
+        int bytesReceived = recvfrom(serverSocketFD, receiveBuffer, MAX_BUFFER_SIZE, 0, 
+                                  (struct sockaddr *)&incomingClientAddress, &clientAddressLength);  
+        if (bytesReceived < 0) 
         {
-            perror("Receive failed");
-            continue;
+            perror("Error: Failed to receive message from client."); 
+            continue; // Continue to next iteration rather than exiting server
         }
+        
+        printf("\nReceived a request from client %s:%d (%d bytes)\n",
+               inet_ntoa(incomingClientAddress.sin_addr), 
+               ntohs(incomingClientAddress.sin_port), 
+               bytesReceived);
+        // printf("Raw received data (first %d bytes): \"%.*s\"\n", bytesReceived, bytesReceived, receiveBuffer); 
 
-        // Validate request
-        if (strncmp(buffer, REQUEST_STRING, strlen(REQUEST_STRING)) == 0)
+        // Validate the received request (client sends fixed size buffer, command at the beginning)
+        if (strncmp(receiveBuffer, EXPECTED_REQUEST_CMD, strlen(EXPECTED_REQUEST_CMD)) == 0) 
         {
-            printf("The request is valid.\n");
+            printf("Client request is valid: \"%s\"\n", EXPECTED_REQUEST_CMD); 
 
-            char response[BUFFER_SIZE];
-            get_route_table(response);
+            char routeTableResponse[MAX_BUFFER_SIZE];       
+            fetchAndFormatRouteTable(routeTableResponse);    
 
-            // Send response
-            ssize_t sent = sendto(Sock, response, BUFFER_SIZE, 0,
-            (struct sockaddr *)&client, addr_len);
-            if (sent < 0) {
-                perror("sendto() failed");
-                close(Sock);
-                exit(EXIT_FAILURE);
+            // Send the routing table back to the client
+            // printf("Sending routing table response to client (%d bytes)...\n", MAX_BUFFER_SIZE); 
+            ssize_t bytesSent = sendto(serverSocketFD, routeTableResponse, MAX_BUFFER_SIZE, 0, // Using MAX_BUFFER_SIZE
+                                  (struct sockaddr *)&incomingClientAddress, clientAddressLength); // 
+            if (bytesSent < 0) // 
+            {
+                perror("Error: Failed to send response to client."); // 
+                // Original code exits on this failure.
+                close(serverSocketFD); // 
+                exit(EXIT_FAILURE);    // 
             }
-            printf("Routing table sent to %s:%d\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+            else if (bytesSent != MAX_BUFFER_SIZE)
+            {
+                printf("Warning: sendto may not have sent the entire buffer. Sent %zd of %d bytes.\n", bytesSent, MAX_BUFFER_SIZE);
+            }
+            printf("Routing table successfully sent to client %s:%d\n",
+                   inet_ntoa(incomingClientAddress.sin_addr), ntohs(incomingClientAddress.sin_port)); // 
         }
-        else
+        else // 
         {
-            printf("The request is invalid.\n");
+            printf("Client request is invalid or not recognized.\n"); // 
+            // printf("Received data did not match expected command: \"%.*s\"\n", (int)strlen(EXPECTED_REQUEST_CMD), receiveBuffer); 
         }
     }
 
-    close(Sock);
-    return 0;
+    // Close the server socket (this part is unreachable in the current while(1) loop)
+    printf("Server shutting down (this message is typically unreachable)...\n");
+    close(serverSocketFD); // 
+    return 0; // 
 }
